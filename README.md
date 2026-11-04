@@ -62,7 +62,7 @@ RAW 解码(AsShotNeutral) → 双锚点曝光归一 → 线性域高光中性化
 ## 安装与用法
 
 ```bash
-git clone <this repo>
+git clone https://github.com/NopantsNobra/leica-instant-pc.git
 cd leica-instant-pc
 pip install -r requirements.txt
 ```
