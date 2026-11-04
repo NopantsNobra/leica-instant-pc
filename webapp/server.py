@@ -162,20 +162,16 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         q = parse_qs(urlsplit(self.path).query)
-        params = {
-            "mode": q.get("mode", ["m9"])[0],
-            "ev": float(q.get("ev", ["0"])[0]),
-            "strength": float(q.get("strength", ["1"])[0]),
-            "grain": float(q.get("grain", ["1"])[0]),
-            "vignette": float(q.get("vignette", ["0"])[0]),
-            "denoise": float(q.get("denoise", ["0.6"])[0]),
-            "wb": q.get("wb", ["warm"])[0],
-            "scene": q.get("scene", ["common"])[0],
-        }
-        # empty / absent cct -> let render_one derive it from the DNG
-        _cct = q.get("cct", [""])[0]
-        params["cct"] = float(_cct) if _cct else None
-        params["want_base"] = q.get("base", ["0"])[0] == "1"
+
+        # whitelist the enum-like params: an unknown wb would otherwise
+        # fall through develop.load_linear_srgb's if/elif chain into "no
+        # white balance at all" (a full-frame magenta cast)
+        def _num(key, default):
+            raw = q.get(key, [str(default)])[0]
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                raise ValueError(f"invalid number for '{key}': {raw!r}")
 
         # client encodes the filename (non-ISO-8859-1 is illegal in headers)
         fname = unquote(self.headers.get("X-Filename", "upload"))
@@ -183,6 +179,28 @@ class Handler(BaseHTTPRequestHandler):
         data = self.rfile.read(length)
 
         try:
+            mode = q.get("mode", ["m9"])[0]
+            if mode not in ("m9", "m3"):
+                mode = "m9"
+            wb = q.get("wb", ["warm"])[0]
+            if wb not in ("warm", "camera", "daylight", "auto"):
+                wb = "warm"
+
+            params = {
+                "mode": mode,
+                "ev": _num("ev", 0),
+                "strength": _num("strength", 1),
+                "grain": _num("grain", 1),
+                "vignette": _num("vignette", 0),
+                "denoise": _num("denoise", 0.6),
+                "wb": wb,
+                "scene": q.get("scene", ["common"])[0],
+            }
+            # empty / absent cct -> let render_one derive it from the DNG
+            _cct = q.get("cct", [""])[0]
+            params["cct"] = _num("cct", "") if _cct else None
+            params["want_base"] = q.get("base", ["0"])[0] == "1"
+
             result = render_bytes(data, suffix, params)
             self._send_json(200, result)
         except ValueError as e:

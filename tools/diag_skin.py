@@ -12,7 +12,7 @@ from PIL import Image, ImageFilter
 from instant.color import apply_m9, suppress_red_spots
 from instant.develop import (linear_to_srgb, load_linear_srgb,
                              lux_index_from_exif, scene_cct)
-from instant.export import denoise_chroma
+from instant.export import denoise_ycbcr
 from instant.leica_lut import apply_leica_lut
 from instant.tonemap import (m9_tonemap, normalize_exposure,
                              tame_clipped_highlights)
@@ -95,7 +95,7 @@ b = m9_tonemap(a, 0.0)
 stages["3. +tonemap"] = np.clip(b, 0, 1)
 c = apply_m9(b, 1.0)
 stages["4. +apply_m9"] = np.clip(c, 0, 1)
-d = denoise_chroma(c, 0.6)
+d = denoise_ycbcr(c, 0.6)
 stages["5. +denoise .6"] = np.clip(d, 0, 1)
 e = suppress_red_spots(d, 1.0)
 f = apply_leica_lut(e, lux, cct)

@@ -25,11 +25,6 @@ def apply_vignette(img: np.ndarray, amount: float = 0.35) -> np.ndarray:
     return np.clip(out, 0.0, 1.0)
 
 
-def denoise_chroma(img: np.ndarray, strength: float = 1.0) -> np.ndarray:
-    """Chroma-only denoise (kept for API compatibility) - see denoise_ycbcr."""
-    return denoise_ycbcr(img, strength, luma_share=0.0)
-
-
 def denoise_ycbcr(img: np.ndarray, strength: float = 1.0,
                   luma_share: float = 1.0) -> np.ndarray:
     """Shadow-weighted, edge-aware denoise in YCbCr.

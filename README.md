@@ -151,6 +151,10 @@ python render.py in.dng -o out.jpg --wb camera        # 更冷（默认 AsShotNe
   若权利人提出要求，将移除这些文件。
 - **`instant/m9filter.py`**：OffLineM9 的 MIT 代码，版权归其作者。
 
+## 维护
+
+代码维护约定、数据域规范、回归清单见 [MAINTENANCE.md](MAINTENANCE.md)。
+
 ## 免责声明
 
 个人学习与研究项目，与 Xiaomi、Leica Camera AG 无任何关联，未获其授权或背书。

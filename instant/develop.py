@@ -1,16 +1,19 @@
 """RAW decode & linearization.
 
-Strategy: bypass every automatic correction LibRaw would apply
-(auto brightness, tone curve, gamma), and implement the defining
-M9 feature - **locked daylight white balance** - via LibRaw's default
-color-scaling path: when camera WB / auto WB / user WB are ALL unset,
-LibRaw scales the raw channels by its daylight multipliers (pre_mul),
-regardless of the AWB decision made at capture time. Warm scenes
-stay warm - that is the point. The coefficients actually used are
-read back after postprocess for the record.
+Strategy: bypass the automatic corrections LibRaw would apply (auto
+brightness, tone curve, gamma) so the pipeline has full control of the
+linear data, then apply the white balance that forms the foundation of
+the M9 look:
 
-Note on rawpy 0.28 API: the old `day_mul` / `camera_mul` properties
-are gone; `make` / `model` replaced `camera_make` / `camera_model`.
+  warm     (default) : 25% daylight + 75% AsShotNeutral geometric blend
+  camera   : pure AsShotNeutral
+  daylight : locked daylight multipliers (strong amber cast, experiment)
+  auto     : gray-world estimate
+
+The coefficients actually used are read back after postprocess for the
+record. Unknown `wb` values are clamped to "camera" before any decoding so
+they can never fall into the "no white balance at all" path (which leaves
+R/G~1.9 and a full-frame magenta cast).
 """
 
 from __future__ import annotations
@@ -92,6 +95,13 @@ def load_linear_srgb(path: str, wb: str = "warm") -> tuple[np.ndarray, dict]:
 
     Returns (image float32 HxWx3 in [0, ~4+], info dict).
     """
+    # Whitelist FIRST: the WB logic below is a chain of if/elif with no
+    # final else. Any unknown value (e.g. an unvalidated web query param)
+    # would otherwise fall through to use_camera_wb=False, use_auto_wb=False,
+    # user_wb=None - i.e. NO white balance at all, the exact path that once
+    # produced R/G~1.9 and a magenta/purple cast across the whole frame.
+    if wb not in ("warm", "camera", "daylight", "auto"):
+        wb = "camera"
     with rawpy.imread(path) as raw:
         info = {"camera": _camera_name(path)}
         day = None
@@ -140,12 +150,19 @@ def load_srgb_image(path: str) -> tuple[np.ndarray, dict]:
     These are already white-balanced and tone-mapped by whoever produced
     them, so we treat them as display-referred input: decode, linearize
     with the sRGB EOTF, and let the caller re-map.
+
+    NOTE: no extra gain is applied. An earlier version multiplied the linear
+    result by 4.0 under the assumption that `filmic` expected an HDR-ish
+    scene range - but filmic's white point is ~1.0, so a *4 gain pushed a
+    normally-exposed JPG (mid-grey 0.18 -> 0.72) far up the shoulder and
+    clipped ~95% of pixels to white (measured p50 0.754, p95 1.0). Standard
+    linear 0..1 in, filmic, LUT, out reproduces the source exposure.
     """
     from PIL import Image
 
     img8 = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255.0
     linear = srgb_to_linear(img8)
-    return linear * 4.0, {"camera": "sRGB input"}
+    return linear, {"camera": "sRGB input"}
 
 
 def srgb_to_linear(x: np.ndarray) -> np.ndarray:

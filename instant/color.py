@@ -36,72 +36,18 @@ def apply_m9(img: np.ndarray, strength: float = 1.0) -> np.ndarray:
       * gentle highlight chroma roll-off (film behaviour)
       * isolated red-eye dot removal (sensor artefact, not style)
 
+    `strength` scales ONLY the saturation compensation (the single value a
+    user is likely to want to dial). The highlight roll-off and red-spot
+    suppression are defect corrections, not style, and stay at fixed
+    strength so "more style" can never reintroduce red catchlights.
+
     Everything WB/hue/warmth related is intentionally left alone - the
     decoded image plus the LUT decide the colour.
     """
     img = _saturation(img, 1.0 + 0.08 * strength)
-    img = _highlight_desat(img, strength * 0.15)   # LUT handles highlights
-    img = suppress_red_spots(img, strength)
+    img = _highlight_desat(img, 0.15)           # LUT handles highlights
+    img = suppress_red_spots(img, 1.0)
     return np.clip(img, 0.0, 1.0)
-
-
-def _m9_color_signature(img: np.ndarray, k: float) -> np.ndarray:
-    """Hue/saturation fingerprint of Leica M9 colour.
-
-    Cross-referenced from M9 colour analyses and the inverse of the
-    "undo Leica colours" calibration recipe:
-      reds/pinks : more saturated, hue pulled toward magenta
-      blues      : the CCD's strongest channel - denser, pulled toward cyan
-      greens     : slightly desaturated toward olive (kills digital green)
-    """
-    r, g, b = img[..., 0], img[..., 1], img[..., 2]
-    colourful = np.clip((np.maximum(np.maximum(r, g), b)
-                         - np.minimum(np.minimum(r, g), b)) * 2.5, 0.0, 1.0)
-    w_red = np.clip((r - np.maximum(g, b)) * 4.0, 0.0, 1.0) * colourful
-    w_blue = np.clip((b - np.maximum(r, g)) * 4.0, 0.0, 1.0) * colourful
-    w_green = np.clip((g - np.maximum(r, b)) * 4.0, 0.0, 1.0) * colourful
-
-    out = img.copy()
-    # reds -> a touch of magenta (source describes *pink* warmth; pushing
-    # every red fully to magenta turned lips grey-purple)
-    out[..., 0] += 0.026 * w_red * k
-    out[..., 2] += 0.018 * w_red * k
-    # blues -> denser, toward cyan
-    out[..., 1] += 0.065 * w_blue * k
-    out[..., 2] += 0.040 * w_blue * k
-    # greens -> olive
-    out[..., 0] += 0.045 * w_green * k
-    out[..., 1] -= 0.015 * w_green * k
-    return np.clip(out, 0.0, 1.0)
-
-
-def _split_tone(img: np.ndarray, k: float) -> np.ndarray:
-    """Warm highlights / cool shadows - the CCD colour separation.
-
-    Reviews of the real M9 mode describe it as "shadows blue/cyan,
-    highlights *slightly* warm". Amplitudes are deliberately small: a
-    large warm highlight push on top of everything else is what turns the
-    image amber. The separation should be felt, not seen as a colour cast.
-    """
-    y = _luma(img)
-    w_hi = np.clip((y - 0.50) / 0.50, 0.0, 1.0) ** 1.3
-    w_lo = np.clip((0.35 - y) / 0.35, 0.0, 1.0) ** 1.2
-    out = img.copy()
-    out[..., 0] += 0.018 * w_hi * k      # highlight: faint peach
-    out[..., 1] += 0.004 * w_hi * k
-    out[..., 2] -= 0.013 * w_hi * k
-    out[..., 2] += 0.024 * w_lo * k      # shadow: faint teal
-    out[..., 0] -= 0.007 * w_lo * k
-    return np.clip(out, 0.0, 1.0)
-
-
-def _fade(img: np.ndarray, k: float) -> np.ndarray:
-    """Film fade: float the blacks and desaturate shadows slightly."""
-    y = _luma(img)[..., None]
-    w = np.clip((0.35 - y) / 0.35, 0.0, 1.0) ** 1.5
-    out = img * (1.0 - 0.05 * w) + 0.035 * w
-    out = out + (y - out) * (0.10 * w)
-    return np.clip(out, 0.0, 1.0)
 
 
 def _luma(img: np.ndarray) -> np.ndarray:
@@ -157,20 +103,6 @@ def suppress_red_spots(img: np.ndarray, strength: float = 1.0) -> np.ndarray:
     return np.clip(out, 0.0, 1.0)
 
 
-def _shadow_blue(img: np.ndarray, k: float) -> np.ndarray:
-    """Blue cast confined to true shadows, gone by ~0.20 luminance.
-
-    Deliberately narrow: a wide threshold painted most of the frame
-    blue-red (purple) once exposure normalization lifted midtones.
-    """
-    y = _luma(img)
-    w = np.clip(1.0 - y / 0.20, 0.0, 1.0) ** 2.0 * k
-    out = img.copy()
-    out[..., 0] -= 0.012 * w
-    out[..., 2] += 0.018 * w
-    return out
-
-
 def _highlight_weight(y: np.ndarray) -> np.ndarray:
     """0 below y=0.62, ramping to 1 at y=0.90.
 
@@ -180,22 +112,6 @@ def _highlight_weight(y: np.ndarray) -> np.ndarray:
     desaturating mid-tones such as skin.
     """
     return np.clip((y - 0.62) / 0.28, 0.0, 1.0) ** 1.2
-
-
-def _warm_boost(img: np.ndarray, k: float) -> np.ndarray:
-    """Selective chroma gain in the warm half of the hue wheel.
-
-    Excludes highlights: warm speculars would otherwise be pushed further
-    into red (the 'red-eye' failure mode).
-    """
-    y = _luma(img)
-    c = img - y[..., None]                      # chroma vector
-    r_excess = np.clip(img[..., 0] - img[..., 2], 0.0, None)  # R>B = warm
-    guard = 1.0 - _highlight_weight(y)          # skip highlights
-    guard *= np.clip(y / 0.18, 0.0, 1.0)        # skip noisy shadows
-    w = np.clip(r_excess * 2.2, 0.0, 1.0) * k * guard
-    out = img + c * (0.28 * w)[..., None]
-    return out
 
 
 def _saturation(img: np.ndarray, factor: float) -> np.ndarray:
@@ -225,21 +141,6 @@ def _highlight_desat(img: np.ndarray, k: float) -> np.ndarray:
     y = _luma(img)
     w = _highlight_weight(y) * k
     return y[..., None] + (img - y[..., None]) * (1.0 - 0.80 * w)[..., None]
-
-
-def _warm_oil(img: np.ndarray, k: float) -> np.ndarray:
-    """Very faint red lift in the mids ('CCD oil').
-
-    Amplitude cut to 0.005: combined with a warm WB this used to stack
-    into an amber wash. Keep it subliminal - it should add density, not
-    colour.
-    """
-    y = _luma(img)
-    w = np.clip(y / 0.5, 0.0, 1.0) * (1.0 - _highlight_weight(y)) * k
-    r = np.clip(img[..., 0], 0.0, 1.0) ** (1.0 / (1.0 + 0.005 * k))
-    out = img.copy()
-    out[..., 0] = img[..., 0] + (r - img[..., 0]) * w
-    return out
 
 
 # --------------------------------------------------------------------------

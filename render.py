@@ -2,12 +2,13 @@
 """Leica-Instant-style offline renderer - personal study build.
 
 Pipeline (scene-referred -> display-referred):
-  RAW decode (LibRaw, all automation disabled, daylight WB locked)
-    -> filmic tone map (M9 dense / M3 soft-grey)
-    -> color operators (M9 chain, or user-fitted .cube LUT)
+  RAW decode (LibRaw, automation disabled, AsShotNeutral WB or a
+    25% daylight blend) -> exposure normalization -> linear-domain
+    highlight neutralization -> filmic tone map (M9 dense / M3 soft-grey)
+    -> M9 colour stage -> real 17^3 LeicaFilter LUT (lux x scene CCT)
+    -> shadow-weighted denoise + isolated red-spot suppression
     -> M3: spectral monochrome + MONOPAN-style grain
-    -> optional vignette
-    -> JPG / 16-bit TIFF
+    -> JPG / PNG / 16-bit TIFF
 
 Usage:
   python render.py input.dng -o out.jpg --mode m9
@@ -120,7 +121,8 @@ def render_one(inp: Path, out: Path, args) -> dict:
             disp = denoise_ycbcr(disp, strength=args.denoise)
         # red-eye suppression must follow denoise: blurring re-spreads the
         # dots into halos and hides them from the isolation test.
-        disp = suppress_red_spots(disp, strength=args.strength)
+        # Fixed strength (defect correction, not style - see apply_m9).
+        disp = suppress_red_spots(disp, strength=1.0)
     if args.vignette > 0:
         disp = apply_vignette(disp, amount=args.vignette)
 
@@ -146,7 +148,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ev", type=float, default=0.0,
                    help="exposure adjustment in stops (-2..2)")
     p.add_argument("--strength", type=float, default=1.0,
-                   help="M9 color chain intensity (0..2, default 1.0)")
+                   help="M9 saturation compensation (0..2, default 1.0). "
+                        "Scales ONLY the saturation stage - the LUT provides "
+                        "the look, this compensates for the missing StyleTrans "
+                        "network")
     p.add_argument("--grain", type=float, default=1.0,
                    help="M3 grain strength (0..2, default 1.0)")
     p.add_argument("--vignette", type=float, default=0.0,
