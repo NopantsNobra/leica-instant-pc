@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>instant · 徕卡一瞬 M9 渲染器</title>
+<style>
+  :root {
+    --bg: #f6f6f8; --panel: #ffffff; --line: #e3e3e8; --line-soft: #efeff3;
+    --text: #1c1c1e; --muted: #7a7a80; --accent: #c8102e; --accent-soft: #fdeef0;
+    --ok: #1a7f37; --err: #b3261e; --err-bg: #fdf1f0; --err-line: #f3c8c4;
+    --stage: #ececef; --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141416; --panel: #1c1c20; --line: #2e2e34; --line-soft: #26262b;
+      --text: #e9e9ee; --muted: #8d8d96; --accent: #e0304a; --accent-soft: #2a1519;
+      --ok: #4ac26a; --err: #ff6b5e; --err-bg: #2a1614; --err-line: #4a2420;
+      --stage: #101013;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    padding: 22px; max-width: 1200px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  header h1 { font-size: 19px; font-weight: 650; letter-spacing: .2px; }
+  header h1 .dot { color: var(--accent); }
+  header span { color: var(--muted); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 372px minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px;
+  }
+  /* ---- drop zone ---- */
+  #drop {
+    border: 1.5px dashed var(--line); border-radius: 10px;
+    padding: 26px 16px; text-align: center; cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s;
+    color: var(--muted); font-size: 13px; line-height: 1.7; user-select: none;
+  }
+  #drop:hover { border-color: var(--muted); }
+  #drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+  #drop b { color: var(--text); font-size: 13.5px; font-weight: 600; }
+  #drop .hint { font-size: 11px; margin-top: 5px; display: block; opacity: .85; }
+  /* ---- fields ---- */
+  .field { margin-top: 15px; }
+  .field:first-of-type { margin-top: 14px; }
+  .field label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; color: var(--muted); margin-bottom: 6px; gap: 8px;
+  }
+  .field label output { color: var(--text); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .field label .tag { color: var(--muted); font-size: 10.5px; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    flex: 1; border: 0; background: transparent; padding: 7px 0;
+    font-size: 12.5px; cursor: pointer; color: var(--muted);
+    font-family: inherit; transition: background .12s, color .12s;
+  }
+  .seg button:hover { background: var(--line-soft); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button.on:hover { background: var(--accent); }
+  input[type=range] {
+    width: 100%; accent-color: var(--accent); height: 18px; cursor: pointer;
+  }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row input[type=range] { flex: 1; }
+  .chip {
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    border-radius: 6px; font-size: 11px; padding: 4px 8px; cursor: pointer;
+    font-family: inherit; white-space: nowrap;
+  }
+  .chip.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  input[type=number] {
+    width: 62px; font: inherit; font-size: 12px; padding: 4px 6px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: var(--text);
+  }
+  /* ---- actions ---- */
+  #render {
+    width: 100%; border: 0; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: #fff; font-size: 13.5px; font-weight: 500;
+    padding: 11px 16px; font-family: inherit; margin-top: 16px;
+    transition: filter .12s, opacity .12s;
+  }
+  #render:hover:not(:disabled) { filter: brightness(1.08); }
+  #render:disabled { background: var(--line); color: var(--muted); cursor: default; }
+  #render.dirty { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.22); } }
+  .note { margin-top: 10px; font-size: 11px; color: var(--muted); line-height: 1.6; }
+  /* ---- stage ---- */
+  #stage { display: flex; flex-direction: column; gap: 12px; min-height: 360px; }
+  #imgwrap {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    background: var(--stage); border-radius: 10px; overflow: hidden;
+    min-height: 340px; padding: 8px;
+  }
+  #imgwrap img { max-width: 100%; max-height: 64vh; display: none; border-radius: 3px; }
+  #placeholder { color: var(--muted); font-size: 12.5px; }
+  #busy {
+    display: none; position: absolute; inset: 0; z-index: 3;
+    background: color-mix(in srgb, var(--panel) 86%, transparent);
+    align-items: center; justify-content: center; flex-direction: column; gap: 11px;
+    font-size: 12.5px; color: var(--muted); backdrop-filter: blur(2px);
+  }
+  .spin {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2.5px solid var(--line); border-top-color: var(--accent);
+    animation: r .8s linear infinite;
+  }
+  @keyframes r { to { transform: rotate(360deg); } }
+  #bar { display: none; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
+  #meta b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  #tools { display: none; gap: 8px; }
+  a.act, button.act {
+    display: inline-block; border: 0; border-radius: 7px; cursor: pointer;
+    background: var(--accent); color: #fff; font-size: 12.5px; font-weight: 500;
+    padding: 8px 14px; font-family: inherit; text-decoration: none;
+  }
+  button.ghost {
+    background: transparent; color: var(--text);
+    border: 1px solid var(--line);
+  }
+  a.act:hover, button.act:hover { filter: brightness(1.07); }
+  button.ghost:hover { border-color: var(--muted); filter: none; }
+  button.ghost.holding { border-color: var(--accent); color: var(--accent); }
+  #err {
+    display: none; font-size: 12.5px; color: var(--err);
+    background: var(--err-bg); border: 1px solid var(--err-line);
+    border-radius: 8px; padding: 10px 12px; line-height: 1.6;
+  }
+  footer { margin-top: 16px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+  footer code { font-size: 10.5px; opacity: .9; }
+</style>
+</head>
+<body>
+<header>
+  <h1>instant<span class="dot"> · </span>徕卡一瞬 M9 渲染器</h1>
+  <span>本地离线 · ROM 17³ LUT · M9 彩色 / M3 MONOPAN 黑白</span>
+</header>
+
+<div class="grid">
+  <!-- ---------------- input + params ---------------- -->
+  <div class="panel">
+    <div id="drop">
+      <b>拖入 RAW 或图片</b>
+      DNG · ARW · CR2 · NEF · RAF · RW2 · JPG · PNG
+      <span class="hint">点击选择文件，松手即开始渲染</span>
+    </div>
+    <input type="file" id="file" hidden
+           accept=".dng,.arw,.cr2,.cr3,.nef,.raf,.rw2,.orf,.jpg,.jpeg,.png,.tif,.tiff">
+
+    <div class="field">
+      <div class="seg" id="modeSeg">
+        <button data-v="m9" class="on">M9 · 彩色</button>
+        <button data-v="m3">M3 · 黑白</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="ev">曝光 <output id="o-ev">0.0 EV</output></label>
+      <input type="range" id="ev" min="-2" max="2" step="0.1" value="0">
+    </div>
+
+    <div class="m9only">
+      <div class="field">
+        <label for="strength">色彩浓度 <output id="o-strength">1.00</output></label>
+        <input type="range" id="strength" min="0" max="2" step="0.05" value="1">
+      </div>
+
+      <div class="field">
+        <label>
+          <span>色温 <span class="tag">（LUT 档位）</span></span>
+          <output id="o-cct">自动</output>
+        </label>
+        <div class="row">
+          <input type="range" id="cct" min="2600" max="7500" step="50" value="5000">
+          <button class="chip on" id="cctAuto">自动</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label><span>白平衡基准</span></label>
+        <div class="seg" id="wbSeg">
+          <button data-v="warm" class="on">略暖</button>
+          <button data-v="camera">中性</button>
+          <button data-v="daylight">强暖</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="denoise">色度降噪 <output id="o-denoise">0.60</output></label>
+        <input type="range" id="denoise" min="0" max="1.5" step="0.05" value="0.6">
+      </div>
+    </div>
+
+    <div class="m3only" style="display:none">
+      <div class="field">
+        <label for="grain">颗粒 <output id="o-grain">1.00</output></label>
+        <input type="range" id="grain" min="0" max="2" step="0.05" value="1">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="vignette">
+        <span>额外暗角 <span class="tag">（LUT 已自带）</span></span>
+        <output id="o-vignette">0.00</output>
+      </label>
+      <input type="range" id="vignette" min="0" max="1" step="0.05" value="0">
+    </div>
+
+    <button id="render" disabled>渲染</button>
+    <div class="note" id="hint">先拖入一张照片。</div>
+  </div>
+
+  <!-- ---------------- result ---------------- -->
+  <div class="panel">
+    <div id="stage">
+      <div id="imgwrap">
+        <div id="placeholder">渲染结果会显示在这里</div>
+        <img id="result" alt="渲染结果">
+        <div id="busy"><div class="spin"></div><span id="busytext">处理中…</span></div>
+      </div>
+      <div id="err"></div>
+      <div id="bar">
+        <div id="meta">
+          <span>机身 <b id="m-cam">—</b></span>
+          <span>色温 <b id="m-cct">—</b></span>
+          <span>亮度索引 <b id="m-lux">—</b></span>
+          <span>耗时 <b id="m-time">—</b></span>
+          <span>大小 <b id="m-size">—</b></span>
+        </div>
+        <div id="tools">
+          <button class="ghost act" id="peek" disabled>按住看原图</button>
+          <a class="act" id="dl" download>下载 JPG</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  服务只监听 <code>127.0.0.1</code>，文件不上传、不联网，渲染完即删。<br>
+  色彩来自小米 17 Ultra ROM 解出的 LeicaFilter 参数（17³ LUT ×114 + CvStyle 暗角），
+  管线结构参照 OffLineM9 逆向结论；StyleTrans 神经网络未包含，用饱和补偿近似。
+  个人研究用途，与 Xiaomi / Leica Camera AG 无关。
+</footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const drop = $("drop"), fileIn = $("file"), img = $("result"),
+      busy = $("busy"), busytext = $("busytext"), errBox = $("err"),
+      bar = $("bar"), tools = $("tools"), dl = $("dl"), btn = $("render"),
+      peek = $("peek"), hint = $("hint");
+
+let file = null, mode = "m9", wb = "warm", cctAuto = true;
+let outUrl = null, srcUrl = null, lastParams = null, srcPeekable = false, baseB64 = null;
+
+const RAW_EXT = ["dng","arw","cr2","cr3","nef","raf","rw2","orf"];
+
+/* ---------------- mode / wb segments ---------------- */
+$("modeSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  mode = b.dataset.v;
+  [...$("modeSeg").children].forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".m9only").forEach(el =>
+    el.style.display = mode === "m9" ? "" : "none");
+  document.querySelectorAll(".m3only").forEach(el =>
+    el.style.display = mode === "m3" ? "" : "none");
+  markDirty();
+});
+$("wbSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  wb = b.dataset.v;
+  [...$("wbSeg").children].forEach(x => x.classList.toggle("on", x === b));
+  markDirty();
+});
+
+/* ---------------- sliders ---------------- */
+const fmt = { ev: v => (+v).toFixed(1) + " EV" };
+for (const id of ["ev","strength","cct","denoise","grain","vignette"]) {
+  const el = $(id), out = $("o-" + id);
+  el.addEventListener("input", () => {
+    if (id === "cct") { cctAuto = false; $("cctAuto").classList.remove("on"); }
+    paint(id);
+    markDirty();
+  });
+  paint(id);
+}
+function paint(id) {
+  const v = $(id).value, out = $("o-" + id);
+  if (id === "cct" && cctAuto) { out.textContent = "自动"; return; }
+  if (id === "cct") { out.textContent = v + " K"; return; }
+  out.textContent = fmt[id] ? fmt[id](v) : (+v).toFixed(2);
+}
+$("cctAuto").addEventListener("click", () => {
+  cctAuto = true;
+  $("cctAuto").classList.add("on");
+  paint("cct"); markDirty();
+});
+
+/* ---------------- drop & pick ---------------- */
+drop.addEventListener("click", () => fileIn.click());
+["dragenter","dragover"].forEach(t =>
+  drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(t =>
+  drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => {
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) accept(f);
+});
+fileIn.addEventListener("change", () => {
+  if (fileIn.files[0]) accept(fileIn.files[0]);
+  fileIn.value = "";
+});
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => e.preventDefault());
+
+function accept(f) {
+  file = f;
+  baseB64 = null;                       // new file -> new baseline
+  const ext = (f.name.split(".").pop() || "").toLowerCase();
+  // browsers can decode bitmaps directly; RAW needs the server's baseline
+  srcPeekable = !RAW_EXT.includes(ext);
+  if (srcUrl) { URL.revokeObjectURL(srcUrl); srcUrl = null; }
+  if (srcPeekable) srcUrl = URL.createObjectURL(f);
+  peek.disabled = true;                 // enabled once we have something to show
+  btn.disabled = false;
+  hint.textContent = `${f.name} · ${(f.size / 1048576).toFixed(1)} MB`;
+  run();
+}
+
+/* ---------------- request ---------------- */
+function query() {
+  const p = new URLSearchParams({
+    mode, wb,
+    ev: $("ev").value,
+    strength: $("strength").value,
+    grain: $("grain").value,
+    vignette: $("vignette").value,
+    denoise: $("denoise").value,
+  });
+  if (!cctAuto) p.set("cct", $("cct").value);
+  // RAW inputs have nothing the browser can display -> ask the server for a
+  // neutral baseline once, then reuse it for "hold to compare"
+  if (!srcPeekable && !baseB64) p.set("base", "1");
+  return p.toString();
+}
+
+function setBusy(on, text) {
+  busy.style.display = on ? "flex" : "none";
+  if (text) busytext.textContent = text;
+  btn.disabled = on || !file;
+  btn.textContent = on ? "渲染中…" : "渲染";
+  if (!on) btn.classList.remove("dirty");
+}
+
+function markDirty() {
+  if (!file || busy.style.display === "flex") return;
+  btn.classList.add("dirty");
+  btn.textContent = "参数已改 · 重新渲染";
+}
+
+async function run() {
+  if (!file) return;
+  errBox.style.display = "none";
+  setBusy(true, "解码与渲染中…（12MP 约 20 秒）");
+  const used = query();
+  try {
+    const resp = await fetch("/render?" + used, {
+      method: "POST",
+      headers: {
+        // header values are ISO-8859-1 only -> encode non-ASCII filenames
+        "X-Filename": encodeURIComponent(file.name || "upload"),
+        "Content-Type": "application/octet-stream",
+      },
+      body: file,
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ("HTTP " + resp.status));
+
+    const bin = atob(data.jpg_b64), buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    if (outUrl) URL.revokeObjectURL(outUrl);
+    outUrl = URL.createObjectURL(new Blob([buf], { type: "image/jpeg" }));
+
+    img.src = outUrl;
+    img.style.display = "block";
+    $("placeholder").style.display = "none";
+    bar.style.display = "flex";
+    tools.style.display = "flex";
+    dl.href = outUrl;
+    dl.download = (file.name || "photo").replace(/\.[^.]+$/, "") + "_" + data.mode + ".jpg";
+
+    if (data.baseline_b64) baseB64 = data.baseline_b64;
+    peek.disabled = !(srcPeekable ? srcUrl : baseB64);
+
+    $("m-cam").textContent = data.camera || "—";
+    $("m-cct").textContent = data.cct ? Math.round(data.cct) + " K" : "—";
+    $("m-lux").textContent = (data.lux_index === null || data.lux_index === undefined)
+      ? "—" : Math.round(data.lux_index);
+    $("m-time").textContent = data.elapsed_s + " s";
+    $("m-size").textContent = data.size_kb + " KB";
+    lastParams = used;
+  } catch (e) {
+    errBox.textContent = "渲染失败：" + e.message;
+    errBox.style.display = "block";
+  } finally {
+    setBusy(false);
+  }
+}
+
+btn.addEventListener("click", run);
+
+/* ---------------- hold to compare ---------------- */
+function peekOn() {
+  if (srcPeekable && srcUrl) {
+    img.src = srcUrl;
+  } else if (baseB64) {
+    img.src = "data:image/jpeg;base64," + baseB64;
+  } else {
+    return;
+  }
+  peek.classList.add("holding");
+  peek.textContent = "松开回到成片";
+}
+function peekOff() {
+  if (!outUrl) return;
+  img.src = outUrl;
+  peek.classList.remove("holding");
+  peek.textContent = "按住看原图";
+}
+["mousedown","touchstart"].forEach(t => peek.addEventListener(t, e => { e.preventDefault(); peekOn(); }));
+["mouseup","mouseleave","touchend","touchcancel"].forEach(t => peek.addEventListener(t, peekOff));
+</script>
+</body>
+</html>

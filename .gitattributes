@@ -1,0 +1,6 @@
+# normalize line endings: source files are LF, binary assets untouched
+* text=auto eol=lf
+*.bin binary
+*.jpg binary
+*.png binary
+*.dng binary

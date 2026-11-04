@@ -1,0 +1,39 @@
+# ---- personal / private material (NEVER commit) -------------------------
+# sample photos include private portraits; keep the repo free of them
+samples/
+*.dng
+*.arw
+*.cr2
+*.nef
+*.raf
+*.rw2
+*.orf
+
+# third-party reference copies used during development only
+m9assets/
+
+# ---- python ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- scratch / generated ----------------------------------------------
+# ad-hoc debug artifacts from the CLI and the local web service
+/*.json
+/webapp/*.json
+/_c.js
+*.log
+
+# ---- editors / os ------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- build output ------------------------------------------------------
+out/
+outs/

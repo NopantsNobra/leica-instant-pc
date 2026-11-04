@@ -1,0 +1,4 @@
+rawpy>=0.28
+numpy>=2.0
+pillow>=10.0
+tifffile>=2024.0

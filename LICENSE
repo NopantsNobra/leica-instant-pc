@@ -1,0 +1,41 @@
+MIT License
+
+Copyright (c) 2026 NopantsNobra
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---------------------------------------------------------------------------
+SCOPE NOTE - this MIT grant covers the source code of this repository only.
+
+It does NOT cover:
+
+1. `instant/assets/leica_filter_param_m9_*.bin`
+   Proprietary parameter tables extracted from the Xiaomi 17 Ultra firmware
+   (17^3 LUT set, CvStyle shading, gamma/cc/cv/tdl tables). Copyright
+   Xiaomi Corp. / Leica Camera AG. Included solely for interoperability and
+   personal research; no right to redistribute is granted here. These files
+   will be removed on request by the rights holders.
+
+2. `instant/m9filter.py`
+   Verbatim copy of `m9/leicafilter.py` from the OffLineM9 project
+   <https://github.com/benbaobaoshigemi/OffLineM9>, licensed MIT by its
+   author. Copyright belongs to that author; the original MIT terms apply.
+
+This project is not affiliated with, authorized by, or endorsed by Xiaomi or
+Leica Camera AG.
