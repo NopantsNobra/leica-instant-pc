@@ -118,7 +118,13 @@ def render_one(inp: Path, out: Path, args) -> dict:
         # cleaning before it leaves grain behind. Luma+chroma, shadow
         # weighted, edge protected.
         if args.denoise > 0:
-            disp = denoise_ycbcr(disp, strength=args.denoise)
+            # Low-light scenes get a stronger pass: the exposure normalization
+            # lifts shadows, which is exactly where sensor noise lives. The lux
+            # index already encodes scene brightness (474.9 - 23.45*EV100), so
+            # scale by it instead of asking the user to remember a slider.
+            # lux 400+ -> x1.0 (daylight), lux 100 -> x1.45, lux 0 -> x1.6
+            boost = 1.0 + np.clip((400.0 - lux_index) / 400.0, 0.0, 1.0) * 0.6
+            disp = denoise_ycbcr(disp, strength=args.denoise * boost)
         # red-eye suppression must follow denoise: blurring re-spreads the
         # dots into halos and hides them from the isolation test.
         # Fixed strength (defect correction, not style - see apply_m9).
@@ -177,8 +183,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="write 16-bit TIFF instead of JPG")
     p.add_argument("--no-normalize", action="store_true",
                    help="skip scene-exposure normalization (RAW only)")
-    p.add_argument("--denoise", type=float, default=0.60,
-                   help="chroma-noise reduction strength for M9 (0..2, default 0.60) "
+    p.add_argument("--denoise", type=float, default=0.75,
+                   help="noise reduction strength for M9 (0..2, default 0.75, auto-boosted "
+                        "in low light) "
                         "- the LUT already compresses saturated speckle")
     p.add_argument("--quiet", action="store_true")
     args = p.parse_args(argv)

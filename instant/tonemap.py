@@ -44,39 +44,38 @@ def tame_clipped_highlights(img: np.ndarray, knee: float = 0.90,
 def normalize_exposure(img: np.ndarray, target_high: float = 0.86,
                        target_mid: float = 0.155,
                        percentile: float = 99.5,
-                       gain_cap: float = 12.0) -> np.ndarray:
+                       gain_cap: float = 12.0,
+                       high_weight: float = 0.65) -> np.ndarray:
     """Robust scene-exposure normalization on linear data.
 
     RAW pixel values have no absolute brightness anchor. A single
-    highlight anchor (p99.5 -> 0.92) fails on scenes where a few bright
-    pixels dominate: the body of the frame stays crushed in shadow, tone
-    mapping darkens it further, and every luminance-gated style operator
-    stops firing (this is exactly why "nothing happens" on dull scenes).
+    highlight anchor fails on scenes where a few bright pixels dominate:
+    the body of the frame stays crushed in shadow and every luminance-gated
+    operator stops firing.
 
-    Two anchors, combined geometrically:
+    Two anchors, combined as a WEIGHTED geometric mean:
       highlight anchor : p99.5 -> target_high   (protects highlights)
       midtone anchor   : p50   -> target_mid    (puts the scene on 18% grey)
-    The geometric mean balances both; gain is capped for safety.
+    weight = `high_weight` (default 0.65), so the highlight anchor still
+    dominates but the midtone anchor gets a real say.
+
+    Why not `min(geom, high)` (the previous behaviour): a hard highlight
+    cap ignores the midtones entirely. On a night scene the bright signs
+    and street lamps set p99.5, so gain collapsed to a tiny value and the
+    street - the actual subject - went to pure black (measured: p50 0.20 on
+    a frame where the camera's own JPEG sits at 0.37). A weighted blend
+    lifts the shadows while the soft shoulder (see `filmic`) absorbs the
+    highlights that the extra gain pushes up.
     """
     y = 0.2126 * img[..., 0] + 0.7152 * img[..., 1] + 0.0722 * img[..., 2]
     p_hi = float(np.percentile(y, percentile))
     p_mid = float(np.percentile(y, 50))
-    gains = []
-    if p_hi > 1e-6:
-        gains.append(target_high / p_hi)
-    if p_mid > 1e-6:
-        gains.append(target_mid / p_mid)
-    if not gains:
-        return np.maximum(img, 0.0)
-    gain_geom = float(np.prod(gains) ** (1.0 / len(gains)))
-    # HIGHLIGHTS ARE A HARD LIMIT. A geometric mean of the two anchors can
-    # push p99.5 to ~0.97-0.99, where the filmic shoulder has almost no
-    # slope left: every highlight input collapses into one flat band and
-    # the sky "blows out" even though no pixel is pure white. Capping the
-    # gain at the highlight anchor keeps p99.5 at target_high, so the
-    # shoulder still has room to render tonal separation.
-    gain_high = (target_high / p_hi) if p_hi > 1e-6 else gain_geom
-    gain = min(gain_geom, gain_high)
+
+    gain_high = (target_high / p_hi) if p_hi > 1e-6 else 1.0
+    gain_mid = (target_mid / p_mid) if p_mid > 1e-6 else 1.0
+
+    w = float(np.clip(high_weight, 0.0, 1.0))
+    gain = (gain_high ** w) * (gain_mid ** (1.0 - w))
     gain = min(gain, gain_cap)
     return np.maximum(img * gain, 0.0)
 

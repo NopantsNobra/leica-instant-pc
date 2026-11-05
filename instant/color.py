@@ -36,15 +36,27 @@ def apply_m9(img: np.ndarray, strength: float = 1.0) -> np.ndarray:
       * gentle highlight chroma roll-off (film behaviour)
       * isolated red-eye dot removal (sensor artefact, not style)
 
-    `strength` scales ONLY the saturation compensation (the single value a
-    user is likely to want to dial). The highlight roll-off and red-spot
-    suppression are defect corrections, not style, and stay at fixed
-    strength so "more style" can never reintroduce red catchlights.
+    `strength` scales ONLY the saturation compensation; 1.0 (default) lands
+    on 0.85x, i.e. slightly *under* the decoded saturation, because the LUT
+    that follows adds +20..25% of its own on coloured regions (measured;
+    neutral greys pass through untouched at B/G=1.000).
+
+    Measured on two night-lit DNGs against their in-camera JPEGs, 0.85x is
+    the point where both wrong-direction casts disappear at once:
+      amber scene (tungsten interior): R/G 1.887 -> 1.613 (camera 1.619)
+      cyan scene  (dark interior):     R/G 1.249 -> 1.170 (camera 1.182)
+    Anything above ~0.95 leaves the first one visibly orange; anything
+    below ~0.75 goes flat.
+
+    The highlight roll-off and red-spot suppression are fixed-strength
+    defect corrections, not style, so dialling "more style" can never
+    reintroduce red catchlights.
 
     Everything WB/hue/warmth related is intentionally left alone - the
     decoded image plus the LUT decide the colour.
     """
-    img = _saturation(img, 1.0 + 0.08 * strength)
+    sat = 0.85 + 0.15 * (strength - 1.0)        # 0->0.70, 1->0.85, 2->1.00
+    img = _saturation(img, sat)
     img = _highlight_desat(img, 0.15)           # LUT handles highlights
     img = suppress_red_spots(img, 1.0)
     return np.clip(img, 0.0, 1.0)
