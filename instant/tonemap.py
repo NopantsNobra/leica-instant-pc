@@ -45,7 +45,7 @@ def normalize_exposure(img: np.ndarray, target_high: float = 0.86,
                        target_mid: float = 0.155,
                        percentile: float = 99.5,
                        gain_cap: float = 12.0,
-                       high_weight: float = 0.65) -> np.ndarray:
+                       high_weight: float = 0.90) -> np.ndarray:
     """Robust scene-exposure normalization on linear data.
 
     RAW pixel values have no absolute brightness anchor. A single
@@ -56,7 +56,7 @@ def normalize_exposure(img: np.ndarray, target_high: float = 0.86,
     Two anchors, combined as a WEIGHTED geometric mean:
       highlight anchor : p99.5 -> target_high   (protects highlights)
       midtone anchor   : p50   -> target_mid    (puts the scene on 18% grey)
-    weight = `high_weight` (default 0.65), so the highlight anchor still
+    weight = `high_weight` (default 0.90), so the highlight anchor still
     dominates but the midtone anchor gets a real say.
 
     Why not `min(geom, high)` (the previous behaviour): a hard highlight
@@ -147,9 +147,14 @@ def filmic(x: np.ndarray, exposure: float = 0.0,
 
         pivot = float(mid_gray)
         if pivot_linear is not None and pivot_linear > 1e-6:
-            # project the scene pivot through the same curve to get the
-            # display-domain pivot the S-curve must use
-            pv = _hable(np.float64(pivot_linear) * contrast,
+            # Project the scene pivot through the SAME curve the image went
+            # through - including the exposure gain. The curve operates on
+            # x * 2**exposure, so projecting the raw linear pivot (without
+            # that factor) put the S-curve pivot far too low: most pixels
+            # then sat above it and got *brightened* instead of compressed.
+            # Measured: raising s_curve 1.15 -> 1.70 lifted a shadow region
+            # from L*32 to L*44 - the opposite of what contrast should do.
+            pv = _hable(np.float64(pivot_linear) * (2.0 ** exposure) * contrast,
                         0.22, 0.30, 0.10, 0.20, 0.01, 0.30) / nom
             if black_lift > 0.0:
                 pv = black_lift + (1.0 - black_lift) * pv
